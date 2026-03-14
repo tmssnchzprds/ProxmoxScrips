@@ -63,8 +63,27 @@ appstore_menu() {
 
 catalog_browse() {
   load_catalog "$ROOT_DIR/catalog/apps.json"
-  all=$(get_all_apps)
-  sel=$(ui_choose_from_list "Explorar catálogo (todas las apps)" "$all")
+  # obtener categorías disponibles
+  if command -v jq >/dev/null 2>&1; then
+    categories=$(jq -r '.apps[].category' "$ROOT_DIR/catalog/apps.json" | sort -u)
+  else
+    categories=$(sed -n 's/.*"category"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT_DIR/catalog/apps.json" | sort -u)
+  fi
+  selcat=$(ui_menu "Selecciona categoría" "Todas" $(printf "%s " $categories))
+  [ -z "$selcat" ] && return
+
+  if [ "$selcat" = "Todas" ]; then
+    all=$(get_all_apps)
+  else
+    # construir la lista filtrada por categoría en formato id|name
+    if command -v jq >/dev/null 2>&1; then
+      all=$(jq -r --arg c "$selcat" '.apps[] | select(.category==$c) | "\(.id)|\(.name)"' "$ROOT_DIR/catalog/apps.json")
+    else
+      all=$(awk -v RS='}' -v ORS='\n' -v cat="$selcat" '{ if (match($0, /"category"[[:space:]]*:[[:space:]]*"([^"]+)"/,C) && C[1]==cat) { if (match($0,/"id"[[:space:]]*:[[:space:]]*"([^"]+)"/,I) && match($0,/"name"[[:space:]]*:[[:space:]]*"([^"]+)"/,N)) print I[1]"|"N[1] } }' "$ROOT_DIR/catalog/apps.json")
+    fi
+  fi
+
+  sel=$(ui_choose_from_list "Explorar catálogo ($selcat)" "$all")
   [ -z "$sel" ] && return
   app_id=${sel%%|*}
 
