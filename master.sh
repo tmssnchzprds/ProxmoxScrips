@@ -14,22 +14,24 @@ source "$ROOT_DIR/lib/proxmox_api.sh"
 
 CONFIG="$ROOT_DIR/config.conf"
 CAND_CONF="$ROOT_DIR/config.conf"
-# load config if present
 if [ -f "$CAND_CONF" ]; then
   # shellcheck disable=SC1090
   source "$CAND_CONF"
 fi
+
 CACHE_DIR="$ROOT_DIR/cache"
 LOG_DIR="$ROOT_DIR/logs"
-
 mkdir -p "$CACHE_DIR" "$LOG_DIR"
 
-log() { echo "$(date +"%F %T") $*" | tee -a "$LOG_DIR/appstore.log"; }
+log() {
+  echo "$(date +"%F %T") $*" | tee -a "$LOG_DIR/appstore.log"
+}
 
 appstore_menu() {
   while true; do
     CHOICE=$(ui_menu "Proxmox App Store" \
-      "Explorar catálogo" "Buscar" "Ejecutar scripts" "Generar catálogo" "Actualizar repositorios" "Modo Cluster" "Salir")
+      "Explorar catálogo" "Buscar" "Ejecutar scripts" \
+      "Generar catálogo" "Actualizar repositorios" "Modo Cluster" "Salir")
     case "$CHOICE" in
       "Explorar catálogo")
         catalog_browse
@@ -61,31 +63,29 @@ appstore_menu() {
 
 catalog_browse() {
   load_catalog "$ROOT_DIR/catalog/apps.json"
-  # show full list of app names
   all=$(get_all_apps)
   sel=$(ui_choose_from_list "Explorar catálogo (todas las apps)" "$all")
   [ -z "$sel" ] && return
   app_id=${sel%%|*}
-  # list available architectures for this app
-  # try jq first, fallback to none
+
   if command -v jq >/dev/null 2>&1; then
     archs=$(jq -r --arg id "$app_id" '.apps[] | select(.id==$id) | (.architectures // [] )[]' "$ROOT_DIR/catalog/apps.json")
   else
     archs=""
   fi
+
   if [ -z "$archs" ]; then
-    # no architectures listed, run generic script
     script=$(get_app_script_path "$app_id" "")
     ui_msg "Ejecutando script: $script"
     sandbox_run "$script"
   else
-    # present arch choices plus 'automatico'
     arch_choice=$(ui_menu "Selecciona arquitectura" "automatico" $(printf "%s " $archs))
     [ -z "$arch_choice" ] && return
     if [ "$arch_choice" = "automatico" ]; then
-      # prefer amd64
-      if echo "$archs" | grep -q "amd64"; then arch_choice=amd64
-      else arch_choice=$(echo "$archs" | head -n1)
+      if echo "$archs" | grep -q "amd64"; then
+        arch_choice=amd64
+      else
+        arch_choice=$(echo "$archs" | head -n1)
       fi
     fi
     script=$(get_app_script_path "$app_id" "$arch_choice")
@@ -95,7 +95,8 @@ catalog_browse() {
 }
 
 get_app_script_path() {
-  app_id="$1"; arch="$2"
+  app_id="$1"
+  arch="$2"
   if command -v jq >/dev/null 2>&1; then
     if [ -z "$arch" ]; then
       jq -r --arg id "$app_id" '.apps[] | select(.id==$id) | .script // empty' "$ROOT_DIR/catalog/apps.json"
@@ -103,13 +104,11 @@ get_app_script_path() {
       jq -r --arg id "$app_id" --arg a "$arch" '.apps[] | select(.id==$id) | (.script_paths[$a] // .script // empty)' "$ROOT_DIR/catalog/apps.json"
     fi
   else
-    # fallback parsing
     block=$(sed -n "/\"id\"[[:space:]]*:[[:space:]]*\"$app_id\"/,/}/p" "$ROOT_DIR/catalog/apps.json" | sed -n '1,200p')
     if [ -z "$arch" ]; then
       echo "$block" | sed -n 's/.*"script"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
     else
-      # try script_paths
-      echo "$block" | sed -n "s/.*\"$arch\"[[:space:]]*:[[:space:]]*\"\([^"]*\)\".*/\1/p" | head -n1 || echo ""
+      echo "$block" | sed -n "s/.*\"$arch\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n1 || echo ""
     fi
   fi
 }
