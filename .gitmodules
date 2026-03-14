@@ -1,0 +1,6 @@
+[submodule "amd64"]
+	path = amd64
+	url = https://github.com/community-scripts/ProxmoxVE.git
+[submodule "arm64"]
+	path = arm64
+	url = https://github.com/asylumexp/Proxmox.git
